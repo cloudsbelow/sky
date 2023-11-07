@@ -1,0 +1,123 @@
+<!doctype html>
+
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>WebGPU</title>
+    <style>
+      .debugTab {
+        position:absolute;
+        top: -21px;
+        height: 20px;
+        left: 0px;
+        
+        display: flex;
+        flex-direction: row;
+        padding-left: 20px;
+        border: 1px solid white;
+      }
+      .debugTab div {
+        background-color: lightgray;
+        width:30px;
+        text-align: center;
+        margin:1px 1px 1px 0px;
+      }
+    </style>
+  </head>
+  <body style="background-color:#121c25">
+    <div>
+      <canvas width="720" height="480" style="border:1px solid white" id="cmain"></canvas>
+    </div>
+    <div id="debugWrapper"></div>
+
+    <script src="util/verbose.js"></script>
+    <script src="util/debugCanv.js"></script>
+    <script src="util/util.js"></script>
+
+    <script src="modules/sky.js"></script>
+
+    <script src="passes/atm.js"></script>
+    <script> 
+let canvasFormat = null;
+let bgs={};
+let objs={};
+let wgsl={};
+let vals={};
+
+function start(callback){
+  const canvas = document.getElementById("cmain");
+  if (!navigator.gpu) {
+    throw new Error("WebGPU not supported on this browser.");
+  }
+  navigator.gpu.requestAdapter().then((adapter)=>{
+    if (!adapter) {
+      throw new Error("No appropriate GPUAdapter found.");
+    }
+    adapter.requestDevice().then((device)=>{
+      const context = canvas.getContext("webgpu");
+      canvasFormat = navigator.gpu.getPreferredCanvasFormat();
+      context.configure({
+        device: device,
+        format: canvasFormat,
+      });
+      objs.device=device;
+      callback(device, context, canvas);
+    });
+  });
+}
+
+function init(device, context, canvas){
+  const gSky = skyFn(device, true);
+
+  const camUnif = device.createBuffer({
+    label: "Camera Uniform",
+    size: 16*4*2,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  bgs.cam = c_bg(c_bgl(device, "camera bgl", [{r:"b"}]),
+    "camera bg", [{buffer:camUnif}]);
+
+    
+  const mSky = mSkyPipe(device, context, canvas);
+
+  let frameInSec = 0;
+  let oldSec = Date.now();  
+  const frame = ()=>{
+    frameInSec++;
+    if(Date.now()-oldSec>1000){
+      if(frameInSec<25) console.log(frameInSec);
+      frameInSec = 0;
+      oldSec = Date.now();
+    }
+    c_upd();
+    device.queue.writeBuffer(camUnif, 0, b_cc(
+      m4_pers(_cam), 
+      m4_invpersl(_cam),
+    ));
+    setSunPos(device, Math.max(10,_cam.loc[1]),vals.szen??Date.now()/5000);
+
+    const encoder = device.createCommandEncoder();
+    gSky(encoder);
+    mSky(encoder);
+    device.queue.submit([encoder.finish()]);
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+start(init);
+    </script>
+  </body>
+</html>
+
+
+
+
+
+
+
+
+
+
+<!--Lineees-->
