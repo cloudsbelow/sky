@@ -1,6 +1,6 @@
 function mTestPipe(device, context, canvas,tex){
   const tShader = device.createShaderModule({
-    label: "main sky shader",
+    label: "test shader",
     code: /*wgsl*/`
     @group(0) @binding(0) var tex:texture_3d<f32>;
     @group(0) @binding(1) var sam:sampler;
@@ -8,6 +8,7 @@ function mTestPipe(device, context, canvas,tex){
     struct camStruct {
       pMatrix:mat4x4f,
       aInv:mat4x4f,
+      time:f32,
     }
     @group(1) @binding(0) var<uniform> cam: camStruct;
 
@@ -19,9 +20,9 @@ function mTestPipe(device, context, canvas,tex){
     fn fragmentMain(
       @builtin(position) pix:vec4f,
     )->@location(0) vec4f{
-      let ndc=vec3f(pix.xy, 0.5)/vec3f(f32(width),f32(height),modf(cam.pMatrix[3][3]/200).fract);
-      let color = textureSampleLevel(tex,sam,ndc.zxy,0);
-      return vec4f((color/2+0.5).rgb,1);
+      let ndc=vec3f(pix.xy,cam.time)/vec3f(f32(width),f32(height),1);
+      let color = textureSampleLevel(tex,sam,ndc.xyz,0);
+      return vec4f(color.rgb,1);
     }
     `
   });
@@ -31,7 +32,7 @@ function mTestPipe(device, context, canvas,tex){
     label: "tsam",
     addressModeU:"repeat",
     addressModeV:"repeat",
-    addressModeW:"repeat",
+    addressModeW:"clamp-to-edge",
   })])
 
   const tPipe = device.createRenderPipeline({

@@ -260,11 +260,15 @@ function m4_scale(x,y,z){
 }
 
 function b_cc(){
-  let c=new Float32Array(Array.from(arguments).map((x)=>x.length).reduce((x,y)=>x+y));
+  let c=new Float32Array(Array.from(arguments).map((x)=>x.length??1).reduce((x,y)=>x+y));
   let ind=0;
-  for(let i=0; i<arguments.length; i++)
-    for(let j=0; j<arguments[i].length; j++)
-      c[ind++]=arguments[i][j];
+  for(let i=0; i<arguments.length; i++){
+    if(typeof(arguments[i]) == 'object')
+      for(let j=0; j<arguments[i].length; j++)
+        c[ind++]=arguments[i][j];
+    else c[ind++] = arguments[i];
+  }
+    
   return c;
 }
 

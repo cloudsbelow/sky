@@ -6,65 +6,87 @@ function gNoise(device, code, dim, format, seed=0){
 
     const PI = 3.14159265359;
 
-    const primev1 = vec4u(2860486313,1500450271,3267000013,100656001);
-    const prime1 = 4093082899u;
-    fn hashl(a:u32, b:u32, c:u32, d:u32)->i32{
-      let num = dot(primev1, vec4u(a,b,c,seedg+d));
-      return i32(num%prime1) & 0xffff;
+    //stole this actually functional hash function thanks shadertoy
+    const UI0 = 1597334673u;
+    const UI1 = 3812015801u;
+    const UI2 = vec2u(UI0, UI1);
+    const UI3 = vec3u(UI0, UI1, 2798796415u);
+    const UIF = (1.0 / f32(0xffffffffu));
+    fn hash33n(p:vec3u)->vec3f{
+      let q:vec3u = p*UI3;
+      let q2:vec3u = (q.x^q.y^q.z)*UI3;
+      return vec3f(q2)*UIF;
     }
 
-    fn randUVec(seed: i32) -> vec3f {
-      let u = f32(hashl(u32(seed), 0,0,0) & 0xfff)/0x8ff-1;
-      let v = f32(hashl(u32(seed), 1,1,1) & 0xfff)*2*PI/0xfff;
-      let m = sqrt(1-u*u);
-      return vec3f(u, m*cos(v), m*sin(v));
+    //important coord>0 always; t is tilable size, o is block offset
+
+    //it would be much faster to do this properly with shared memory and
+    //stuff but I don't really care about the runtime of an initializer
+    fn grad3t(coord:vec3f, t:vec3u, o:vec3u)->f32{
+      let coordp = modf(coord);
+      let v = vec3u(coordp.whole);
+      let u1 = coordp.fract;
+      let u2 = u1*u1*u1*(u1*(u1*6-15)+10);
+
+      return mix(
+        mix(
+          mix(
+            dot(-1+2*hash33n((v+vec3u(0,0,0))%t+o),u1-vec3f(0,0,0)),
+            dot(-1+2*hash33n((v+vec3u(0,0,1))%t+o),u1-vec3f(0,0,1)),
+          u2.z), mix(
+            dot(-1+2*hash33n((v+vec3u(0,1,0))%t+o),u1-vec3f(0,1,0)),
+            dot(-1+2*hash33n((v+vec3u(0,1,1))%t+o),u1-vec3f(0,1,1)),
+          u2.z),
+        u2.y),mix(
+          mix(
+            dot(-1+2*hash33n((v+vec3u(1,0,0))%t+o),u1-vec3f(1,0,0)),
+            dot(-1+2*hash33n((v+vec3u(1,0,1))%t+o),u1-vec3f(1,0,1)),
+          u2.z), mix(
+            dot(-1+2*hash33n((v+vec3u(1,1,0))%t+o),u1-vec3f(1,1,0)),
+            dot(-1+2*hash33n((v+vec3u(1,1,1))%t+o),u1-vec3f(1,1,1)),
+          u2.z),
+        u2.y),
+      u2.x);
     }
 
-    fn fade(t:vec3f) -> vec3f{
-      return t*t*t*(t*(t*6-15)+10);
+    //important coord>0 always; t is tilable size, o is block offset
+    fn vorn3t(coord:vec3f, t:vec3u, o:vec3u)->f32{
+      let coordp = modf(coord);
+      let v = vec3u(coordp.whole);
+      let u = coordp.fract;
+
+      var m=2.;
+      for(var i=-1; i<=1; i++){
+        for(var j=-1; j<=1; j++){
+          for(var k=-1; k<=1; k++){
+            let tile = vec3i(i,j,k);
+            m=min(m,distance(u, 
+              hash33n((v+vec3u(tile))%t+o)+vec3f(tile)
+            ));
+          }
+        }
+      }
+      return m;
     }
 
-    fn lerp(t:f32, a:f32, b:f32) -> f32{
-      return (1-t)*a+t*b;
+    fn vorn3tf(coord:vec3f, t:vec3u, o:vec3u)->f32{
+      return vorn3t(coord+hash33n(vec3u(0,0,1)), t, o)*0.615+
+        vorn3t(coord*2+hash33n(vec3u(0,0,2)), t*2, o+vec3u(0,0,1000))*0.25+
+        vorn3t(coord*2+hash33n(vec3u(0,0,3)), t*2, o+vec3u(0,0,2000))*0.125;
     }
 
-    fn perlinRep(pix:vec3u, tsize:vec3u, offset:vec3f, tile:vec3u, d:u32)->vec3f{
-      let coord = modf((vec3f(pix)+offset)/vec3f(tsize));
-      let lbox = vec3u(coord.whole)%tile;
-      let ubox = (lbox+1)%tile;
-      let ibox = fade(coord.fract);
-
-      return vec3f(lerp(ibox.x,
-        lerp(ibox.y,
-          lerp(ibox.z,
-            dot(randUVec(hashl(lbox.x,lbox.y,lbox.z,d)),vec3f(ibox.x,ibox.y,ibox.z)),
-            dot(randUVec(hashl(lbox.x,lbox.y,ubox.z,d)),vec3f(ibox.x,ibox.y,1-ibox.z))
-          ),
-          lerp(ibox.z,
-            dot(randUVec(hashl(lbox.x,ubox.y,lbox.z,d)),vec3f(ibox.x,1-ibox.y,ibox.z)),
-            dot(randUVec(hashl(lbox.x,ubox.y,ubox.z,d)),vec3f(ibox.x,1-ibox.y,1-ibox.z))
-          ),
-        ),lerp(ibox.y,
-          lerp(ibox.z,
-            dot(randUVec(hashl(ubox.x,lbox.y,lbox.z,d)),vec3f(1-ibox.x,ibox.y,ibox.z)),
-            dot(randUVec(hashl(ubox.x,lbox.y,ubox.z,d)),vec3f(1-ibox.x,ibox.y,1-ibox.z))
-          ),
-          lerp(ibox.z,
-            dot(randUVec(hashl(ubox.x,ubox.y,lbox.z,d)),vec3f(1-ibox.x,1-ibox.y,ibox.z)),
-            dot(randUVec(hashl(ubox.x,ubox.y,ubox.z,d)),vec3f(1-ibox.x,1-ibox.y,1-ibox.z))
-          ),
-        )
-      ),0,0);
-      /**return vec3f(lerp(ibox.y,
-        lerp(ibox.z,
-          dot(randUVec(hashl(lbox.x,lbox.y,lbox.z)),vec3f(ibox.x,ibox.y,ibox.z)),
-          dot(randUVec(hashl(lbox.x,lbox.y,ubox.z)),vec3f(ibox.x,ibox.y,1-ibox.z))
-        ),
-        lerp(ibox.z,
-          dot(randUVec(hashl(lbox.x,ubox.y,lbox.z)),vec3f(ibox.x,1-ibox.y,ibox.z)),
-          dot(randUVec(hashl(lbox.x,ubox.y,ubox.z)),vec3f(ibox.x,1-ibox.y,1-ibox.z))
-        ),
-      ),randUVec(hashl(lbox.x,lbox.y,lbox.z)).z,0);*/
+    fn grad3tf(coord:vec3f, t:vec3u, o:vec3u, octaves:u32)->f32{
+      var val:f32 = 0;
+      var amp:f32 = 1;
+      var freq:u32 = 1u;
+      for(var i:u32=0; i<octaves; i++){
+        val+=amp*grad3t(
+          coord*f32(freq)+hash33n(vec3u(0,0,i)), t*freq, o+vec3u(0,0,1000*i)
+        );
+        amp*=0.55;
+        freq*=2;
+      }
+      return val;
     }
 
     @compute
@@ -72,6 +94,9 @@ function gNoise(device, code, dim, format, seed=0){
     fn main(
       @builtin(global_invocation_id) pix:vec3u,
     ){
+      let c=vec3f(pix);
+      let d=${(dim.length==3?'vec3u(':'vec2u(')+dim+')'};
+      let df=${(dim.length==3?'vec3f(':'vec2f(')+dim+')'};
       textureStore(tex, pix, ${code});
     }
   `; 
@@ -91,5 +116,5 @@ function gNoise(device, code, dim, format, seed=0){
     (encoder,dim[0]/8,dim[1]/8,dim[2]??1);
   device.queue.submit([encoder.finish()]);
 
-  return tex;
+  return tex
 }

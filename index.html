@@ -33,10 +33,12 @@
     <script src="util/verbose.js"></script>
     <script src="util/debugCanv.js"></script>
     <script src="util/util.js"></script>
+    <script src="util/noise.js"></script>
 
     <script src="modules/sky.js"></script>
 
     <script src="passes/atm.js"></script>
+    <script src="passes/test.js"></script>
     <script> 
 let canvasFormat = null;
 let bgs={};
@@ -71,14 +73,19 @@ function init(device, context, canvas){
 
   const camUnif = device.createBuffer({
     label: "Camera Uniform",
-    size: 16*4*2,
+    size: 16*(4*2+1),
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   bgs.cam = c_bg(c_bgl(device, "camera bgl", [{r:"b"}]),
     "camera bg", [{buffer:camUnif}]);
 
-    
-  const mSky = mSkyPipe(device, context, canvas);
+  const noiseTex = gNoise(device, /*wgsl*/`
+    vec4f(
+      abs(grad3tf(c/8,d/8,vec3u(0,0,0),7))
+    ,0,0,0).xxxx
+  `, [128,128,128], "rgba16float");
+  const tPipe = mTestPipe(device, context, canvas, noiseTex);
+  //const mSky = mSkyPipe(device, context, canvas);
 
   let frameInSec = 0;
   let oldSec = Date.now();  
@@ -93,12 +100,13 @@ function init(device, context, canvas){
     device.queue.writeBuffer(camUnif, 0, b_cc(
       m4_pers(_cam), 
       m4_invpersl(_cam),
+      (Date.now()/10000)%1
     ));
     setSunPos(device, Math.max(10,_cam.loc[1]),vals.szen??Date.now()/5000);
 
     const encoder = device.createCommandEncoder();
     gSky(encoder);
-    mSky(encoder);
+    tPipe(encoder);
     device.queue.submit([encoder.finish()]);
 
     requestAnimationFrame(frame);
