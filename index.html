@@ -81,9 +81,13 @@ function init(device, context, canvas){
 
   const noiseTex = gNoise(device, /*wgsl*/`
     vec4f(
-      abs(grad3tf(c/8,d/8,vec3u(0,0,0),7))
-    ,0,0,0).xxxx
-  `, [128,128,128], "rgba16float");
+      remap(grad3tf(c/32,d/32,vec3u(0,0,0),7),-1,1,
+            1-vorn3tf(c/32,d/32,vec3u(0,0,0)),1),
+      1-vorn3tf(c/32,d/32,vec3u(0,0,0)),
+      1-vorn3tf(c/16,d/16,vec3u(0,0,0)),
+      1-vorn3tf(c/8,d/8,vec3u(0,0,0)),
+    ).xyzw
+  `, [128,128,128], "rgba8unorm");
   const tPipe = mTestPipe(device, context, canvas, noiseTex);
   //const mSky = mSkyPipe(device, context, canvas);
 

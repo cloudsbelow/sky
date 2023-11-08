@@ -70,9 +70,9 @@ function gNoise(device, code, dim, format, seed=0){
     }
 
     fn vorn3tf(coord:vec3f, t:vec3u, o:vec3u)->f32{
-      return vorn3t(coord+hash33n(vec3u(0,0,1)), t, o)*0.615+
+      return vorn3t(coord+hash33n(vec3u(0,0,1)), t, o)*0.6+
         vorn3t(coord*2+hash33n(vec3u(0,0,2)), t*2, o+vec3u(0,0,1000))*0.25+
-        vorn3t(coord*2+hash33n(vec3u(0,0,3)), t*2, o+vec3u(0,0,2000))*0.125;
+        vorn3t(coord*2+hash33n(vec3u(0,0,3)), t*2, o+vec3u(0,0,2000))*0.15;
     }
 
     fn grad3tf(coord:vec3f, t:vec3u, o:vec3u, octaves:u32)->f32{
@@ -87,6 +87,10 @@ function gNoise(device, code, dim, format, seed=0){
         freq*=2;
       }
       return val;
+    }
+
+    fn remap(v:f32, oMin:f32, oMax:f32, nMin:f32, nMax:f32)->f32{
+      return nMin+(nMax-nMin)*(v-oMin)/(oMax-oMin);
     }
 
     @compute
