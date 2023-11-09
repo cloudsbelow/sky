@@ -92,7 +92,8 @@ function init(device, context, canvas){
   const mSky = mSkyPipe(device, context, canvas);
 
   let frameInSec = 0;
-  let oldSec = Date.now();  
+  let oldSec = Date.now(); 
+  vals.szen = 0.1; 
   const frame = ()=>{
     frameInSec++;
     if(Date.now()-oldSec>1000){

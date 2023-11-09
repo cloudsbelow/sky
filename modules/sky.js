@@ -150,7 +150,7 @@ function skyFn(device, debug=false){
 
     ${skyParams}
     //OPTIMIZATION TODO: sample better
-    const sampleCount=100f;
+    const sampleCount=20f;
 
     //OPTIMIZATION TODO: take advantage of twofold symmetry
     @compute
