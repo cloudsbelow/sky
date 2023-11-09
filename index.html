@@ -88,8 +88,8 @@ function init(device, context, canvas){
       1-vorn3tf(c/8,d/8,vec3u(0,0,0)),
     ).xyzw
   `, [128,128,128], "rgba8unorm");
-  const tPipe = mTestPipe(device, context, canvas, noiseTex);
-  //const mSky = mSkyPipe(device, context, canvas);
+  //const tPipe = mTestPipe(device, context, canvas, noiseTex);
+  const mSky = mSkyPipe(device, context, canvas);
 
   let frameInSec = 0;
   let oldSec = Date.now();  
@@ -110,7 +110,7 @@ function init(device, context, canvas){
 
     const encoder = device.createCommandEncoder();
     gSky(encoder);
-    tPipe(encoder);
+    mSky(encoder);
     device.queue.submit([encoder.finish()]);
 
     requestAnimationFrame(frame);

@@ -188,32 +188,35 @@ function skyFn(device, debug=false){
       //VISUAL TODO:
       //Jitter and time aa
       //Shadow shi* (need to do shadows first lmao)
-      var absorption=vec3f(0,0,0);
+      var transmittance=vec3f(1,1,1);
       var light=vec3f(0,0,0);
       for(var i=0.; i<sampleCount; i+=1){
         pos+=step;
         let salt = length(pos)-gRad;
         ${rAt+mAt+oAt+eAt}
-        absorption+=eAt*stepsize;
         let scoords = vec2f(
           acos(dot(pos,sun.dir)/length(pos))/PI,
           salt/aWidth
         );
         let rAc = min(rAt, 1);
         let mAc = min(mAt, 1);
-        light+=stepsize*exp(-absorption)*(
+
+        let inoutscat=(
           //first-order scattering
           textureSampleLevel(trans, fsampler, scoords, 0).rgb*
             (rScat*rAc*rphase+mScat*mAc*mphase)+
           //higher-order scattering
           textureSampleLevel(mscat, fsampler, scoords,0).rgb*
             (rScat*rAc+mScat*mAc) //phase function premultiplied
-        );
+        )/eAt;
+        let segtrans = exp(-stepsize*eAt);
+        light += (-inoutscat*segtrans+inoutscat)*transmittance;
+        transmittance *= segtrans;
         pos+=step;
       }
       textureStore(sky, pix.xy, vec4f(
         light*sun.col,
-        exp(-absorption.g)
+        transmittance.g
       ));
     }
   `;
