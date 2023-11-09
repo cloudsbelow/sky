@@ -1,25 +1,35 @@
+/*
+Creates atmospheric lookup tables mostly as discussed in readme/r1
+Some changes to LUTs themselves:
+Moved isotropic term out of MSCAT so it can serve as general radiance at point
+Added transmittance calculation to MSCAT before first bounce
+Some resizing
+Reparamatrize TRANS and MSCAT to take in cosT instead of T (on hold)
+*/
+
 
 function skyFn(device, debug=false){
   skyParams = /*wgsl*/`
     const PI=3.14159265;
 
-    const scaleFactor = 0.000002; //10^-6
+    const scaleFactor = 0.000001; //10^-6 for earth
     const rScat = vec3f(5.802, 13.558, 33.1)*scaleFactor;
     const rExt = rScat;
-    const mScat = 3.996*scaleFactor;
+    const mScat = 1.5*scaleFactor; //reduced because it looked trash (from 3.996)
     const mAbs = 4.40*scaleFactor;
     const mExt = mScat+mAbs;
     const mAsym = 0.8; //'g'
     const oAbs = vec3f(0.650, 1.881, 0.085)*scaleFactor;
     const oExt = oAbs;
 
-    const gRad = 300000; //6340 km
+    const gRad = 6340000; //6340 km
     const aWidth = 100000; //100 km
     const aRad = gRad+aWidth;
 
-    const gDiffuse = vec3f(0.99,0.99,0.99)/PI;
+    const gDiffuse = vec3f(0.99,0.99,0.99);
     const gSpecular = vec3f(0.3,0.3,0.3);
     const gSpecHard = 400;
+    const gAlbedo = gDiffuse+gSpecular/gSpecHard;
   `;
 
   //salt for sampled altitude (THIS IS THE NOMENCATURE NOW)
@@ -77,7 +87,7 @@ function skyFn(device, debug=false){
     @group(0) @binding(2) var fsampler:sampler;
 
     const sampleRays = 64f;
-    const sampleCount = 100f; //killll meeeeee
+    const sampleCount = 16f; //killll meeeeee
     ${skyParams}
 
     @compute
@@ -102,7 +112,7 @@ function skyFn(device, debug=false){
           cos(phi)*sin(theta)
         );
         var pos = vec3f(0,alt+gRad,0);
-        var absorption = vec3f(0,0,0);
+        var transmittance = vec3f(1,1,1);
 
         let hcos = pos.y*dir.y; //contrary to popular belief (coordinate space woes)
         let sqrtval = hcos*hcos-pos.y*pos.y;
@@ -116,21 +126,33 @@ function skyFn(device, debug=false){
           pos+=step; //again, midpoint sampling
           let salt = length(pos)-gRad;
           ${rAt+mAt+oAt+eAt}
-          absorption+=eAt*stepsize;
-          let scat=(rScat*rAt+mScat*mAt)*exp(-absorption);
+          //absorption+=eAt*stepsize;
+          //let scat=(rScat*rAt+mScat*mAt)*exp(-absorption);
           let strans = textureSampleLevel(trans, fsampler, vec2f(
             acos(dot(pos,sundir)/length(pos))/PI,
             (salt-gRad)/aWidth
           ), 0).rgb;
-          inscat+=scat*stepsize*strans;
-          fms+=scat*stepsize;
+          //inscat+=scat*stepsize*strans;
+          //fms+=scat*stepsize;
+          let inoutscat = (rAt*rScat+mScat*mAt)/eAt;
+          let segtrans = exp(-stepsize*eAt);
+          inscat += (-inoutscat*segtrans+inoutscat)*transmittance*strans;
+          fms += (-inoutscat*segtrans+inoutscat)*transmittance;
+          
+          transmittance *= segtrans;
           pos+=step;
+        }
+        if(ghit>0){
+          let cthit = dot(pos,sundir)/length(pos);
+          inscat+=textureSampleLevel(trans, fsampler, vec2f(
+            acos(cthit)/PI,0
+          ), 0).rgb*transmittance*cthit*gAlbedo/PI;
         }
       }
       //Renormalize fms and inscat at the end
       //Remember: integration->1 so if sampled, dA negates pu
       textureStore(mscat, pix.xy, vec4f(
-        inscat/(1-fms/sampleRays)/4/PI/sampleRays
+        inscat/(1-fms/sampleRays)/sampleRays
       ,1));
     }
   `;
@@ -172,7 +194,7 @@ function skyFn(device, debug=false){
       //phase functions (constant over ray)
       let ct=dot(dir,sun.dir);
       let cts=ct*ct;
-      let rphase:f32 = fma(cts, PI*3./16., PI*3./16.); 
+      let rphase:f32 = fma(cts, 3./16./PI, 3./16./PI); 
       const thing = (3./(8.*PI))*(1.-mAsym*mAsym)/(2.+mAsym*mAsym); //average const 
       let csdenom=pow(fma(ct, -2.*mAsym, 1.+mAsym*mAsym),3./2.);
       let mphase=fma(cts, thing, thing)/csdenom;
@@ -207,7 +229,7 @@ function skyFn(device, debug=false){
             (rScat*rAc*rphase+mScat*mAc*mphase)+
           //higher-order scattering
           textureSampleLevel(mscat, fsampler, scoords,0).rgb*
-            (rScat*rAc+mScat*mAc) //phase function premultiplied
+            (rScat*rAc+mScat*mAc)/4/PI
         )/eAt;
         let segtrans = exp(-stepsize*eAt);
         light += (-inoutscat*segtrans+inoutscat)*transmittance;
@@ -255,7 +277,7 @@ function skyFn(device, debug=false){
   objs.sun = new Float32Array([
     0,0,1, //position
     30000, //altitude
-    0.7,0.85,1, 0 //color
+    5,5,5, 0 //color
   ]);
   objs.sun.theta = Math.PI/2;
   objs.sun.gpubuf = skyUnif;
@@ -287,7 +309,7 @@ function skyFn(device, debug=false){
   let debugFn = undefined;
   if(debug){
     //vdebug4(device,[256,256],transTex)();
-    vdebug4(device,[256,256],mscatTex,'vec4f(20*info)')();
+    vdebug4(device,[256,256],mscatTex,'vec4f(info)')();
     debugFn = vdebug4(device,[448,256],skyTex);
     debugFn();
   }
